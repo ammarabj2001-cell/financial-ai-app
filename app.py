@@ -17,14 +17,14 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title(" AI Financial Forecast Dashboard")
+st.title("📈 AI Financial Forecast Dashboard")
 st.markdown("Predict stock trends and market risk using Deep Learning.")
 
 # --- 2. Load the AI Models (Only runs once) ---
 @st.cache_resource
 def load_models():
-    # The magic fix: compile=False prevents the TypeError
-    lstm_model = tf.keras.models.load_model('lstm_model.h5', compile=False)
+    # FIXED: Removed 'tf.' because load_model is already imported at the top
+    lstm_model = load_model('lstm_model.h5', compile=False)
     scaler = joblib.load('scaler.pkl')
     garch_model = joblib.load('garch_model.pkl')
     return lstm_model, scaler, garch_model
@@ -32,7 +32,7 @@ def load_models():
 lstm_model, scaler, garch_model = load_models()
 
 # --- 3. Sidebar for User Input ---
-st.sidebar.header("️ User Settings")
+st.sidebar.header("⚙️ User Settings")
 ticker = st.sidebar.selectbox("Select a Stock", ["AAPL", "GOOGL", "MSFT", "AMZN", "TSLA"])
 st.sidebar.markdown("---")
 st.sidebar.info("This dashboard uses an LSTM Neural Network for price forecasting and a GARCH model for risk analysis.")
@@ -90,7 +90,7 @@ with tab1:
     if predicted_price > current_price * 1.02:
         st.success("🟢 **BUY Signal:** AI predicts an upward trend.")
     elif predicted_price < current_price * 0.98:
-        st.error(" **SELL Signal:** AI predicts a downward trend.")
+        st.error("🔴 **SELL Signal:** AI predicts a downward trend.")
     else:
         st.warning("🟡 **HOLD Signal:** Price expected to remain stable.")
 
