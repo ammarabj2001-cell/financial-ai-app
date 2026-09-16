@@ -22,7 +22,6 @@ st.markdown("Predict stock trends and market risk using Deep Learning.")
 # --- 2. Load the AI Models (Bulletproof Method) ---
 @st.cache_resource
 def load_models():
-    # 1. Build the exact same architecture we used in Colab
     model = Sequential()
     model.add(LSTM(units=50, return_sequences=True, input_shape=(60, 1)))
     model.add(Dropout(0.2))
@@ -31,10 +30,7 @@ def load_models():
     model.add(Dense(units=25))
     model.add(Dense(units=1))
     
-    # 2. Load ONLY the weights (bypasses all Keras version errors!)
     model.load_weights('lstm_model.weights.h5')
-    
-    # 3. Load the scaler
     scaler = joblib.load('scaler.pkl')
     
     return model, scaler
@@ -48,28 +44,32 @@ st.sidebar.markdown("---")
 st.sidebar.info("This dashboard uses an LSTM Neural Network for price forecasting and a GARCH model for real-time risk analysis.")
 
 # --- 4. Fetch Data & Run Predictions ---
-@st.cache_data
+@st.cache_data(ttl=3600)
 def get_data(ticker):
-    # Download data
     df = yf.download(ticker, start="2021-01-01", progress=False)
     
-    # Handle potential MultiIndex columns from yfinance
+    if df.empty:
+        return None
+        
+    # Flatten columns if yfinance returns a MultiIndex
     if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
+        df.columns = df.columns.droplevel(1)
         
-    # FORCE 'Close' to be a 1D Series to prevent pandas/numpy bugs
-    close_prices = df['Close']
-    if isinstance(close_prices, pd.DataFrame):
-        close_prices = close_prices.iloc[:, 0]
-        
-    # Now pct_change will work perfectly
+    # THE MAGIC FIX: .squeeze() forces it to be a 1D list, astype(float) ensures it's numbers
+    close_prices = df['Close'].squeeze().astype(float)
+    
     df['Daily_Return'] = close_prices.pct_change()
     df['Rolling_Volatility'] = df['Daily_Return'].rolling(window=20).std() * np.sqrt(252)
     
-    # Drop NaNs created by rolling/pct_change
     return df.dropna()
 
 df = get_data(ticker)
+
+# Safety check if Yahoo Finance blocked the download
+if df is None or df.empty:
+    st.error(f"⚠️ Could not fetch data for {ticker}. Yahoo Finance might be temporarily rate-limiting requests. Please try again in a minute.")
+    st.stop()
+
 current_price = df['Close'].iloc[-1]
 
 # Run LSTM Prediction
@@ -79,12 +79,12 @@ X_new = last_60_scaled.reshape(1, 60, 1)
 predicted_scaled = lstm_model.predict(X_new, verbose=0)
 predicted_price = scaler.inverse_transform(predicted_scaled)[0][0]
 
-# Run GARCH Volatility (Fit on the fly to avoid pickle errors and get latest data!)
+# Run GARCH Volatility
 returns = df['Daily_Return'].dropna() * 100
 garch_spec = arch_model(returns, vol='Garch', p=1, q=1)
 garch_fit = garch_spec.fit(disp='off')
 forecast = garch_fit.forecast(horizon=30)
-forecasted_vol = (forecast.variance.values[-1, :] ** 0.5) * np.sqrt(252) # Annualized
+forecasted_vol = (forecast.variance.values[-1, :] ** 0.5) * np.sqrt(252)
 
 # --- 5. Main Dashboard Display ---
 col1, col2, col3 = st.columns(3)
@@ -111,7 +111,7 @@ with tab1:
     if predicted_price > current_price * 1.02:
         st.success("🟢 **BUY Signal:** AI predicts an upward trend.")
     elif predicted_price < current_price * 0.98:
-        st.error("🔴 **SELL Signal:** AI predicts a downward trend.")
+        st.error(" **SELL Signal:** AI predicts a downward trend.")
     else:
         st.warning("🟡 **HOLD Signal:** Price expected to remain stable.")
 
