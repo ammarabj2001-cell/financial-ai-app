@@ -6,7 +6,6 @@ import joblib
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 from arch import arch_model
-import matplotlib.pyplot as plt
 
 # --- 1. Page Setup & UI/UX ---
 st.set_page_config(page_title="AI Financial Dashboard", page_icon="📈", layout="wide")
@@ -51,12 +50,24 @@ st.sidebar.info("This dashboard uses an LSTM Neural Network for price forecastin
 # --- 4. Fetch Data & Run Predictions ---
 @st.cache_data
 def get_data(ticker):
+    # Download data
     df = yf.download(ticker, start="2021-01-01", progress=False)
+    
+    # Handle potential MultiIndex columns from yfinance
     if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.droplevel(1)
-    df['Daily_Return'] = df['Close'].pct_change()
+        df.columns = df.columns.get_level_values(0)
+        
+    # FORCE 'Close' to be a 1D Series to prevent pandas/numpy bugs
+    close_prices = df['Close']
+    if isinstance(close_prices, pd.DataFrame):
+        close_prices = close_prices.iloc[:, 0]
+        
+    # Now pct_change will work perfectly
+    df['Daily_Return'] = close_prices.pct_change()
     df['Rolling_Volatility'] = df['Daily_Return'].rolling(window=20).std() * np.sqrt(252)
-    return df
+    
+    # Drop NaNs created by rolling/pct_change
+    return df.dropna()
 
 df = get_data(ticker)
 current_price = df['Close'].iloc[-1]
