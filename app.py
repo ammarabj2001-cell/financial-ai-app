@@ -65,13 +65,12 @@ def get_fallback_data(ticker):
 @st.cache_data(ttl=3600)
 def get_data(ticker):
     try:
-        # Try to get live data with a browser-like User-Agent to bypass blocks
         stock = yf.Ticker(ticker)
         df = stock.history(period="5y")
         if not df.empty and 'Close' in df.columns:
             return df
     except Exception:
-        pass # If it fails, we fall back gracefully
+        pass 
     
     # FALLBACK: If Yahoo Finance is blocking, use realistic simulated data
     return get_fallback_data(ticker)
@@ -97,7 +96,10 @@ returns = df['Daily_Return'].dropna() * 100
 garch_spec = arch_model(returns, vol='Garch', p=1, q=1)
 garch_fit = garch_spec.fit(disp='off')
 forecast = garch_fit.forecast(horizon=30)
-forecasted_vol = float((forecast.variance.values[-1, :] ** 0.5) * np.sqrt(252))
+
+# THE FIX: Extract the FIRST element [0] from the 30-day forecast array before converting to float
+forecasted_vol_array = (forecast.variance.values[-1, :] ** 0.5) * np.sqrt(252)
+forecasted_vol = float(forecasted_vol_array[0])
 
 # --- 5. Main Dashboard Display ---
 col1, col2, col3 = st.columns(3)
