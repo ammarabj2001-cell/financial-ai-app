@@ -3,31 +3,42 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 import joblib
-from tensorflow.keras.models import load_model
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Dropout
 import matplotlib.pyplot as plt
 
 # --- 1. Page Setup & UI/UX ---
 st.set_page_config(page_title="AI Financial Dashboard", page_icon="📈", layout="wide")
 
-# Custom CSS for a modern look
 st.markdown("""
     <style>
     .big-font { font-size:20px !important; font-weight: bold; color: #1f77b4; }
-    .metric-card { background-color: #f0f2f6; padding: 20px; border-radius: 10px; }
     </style>
 """, unsafe_allow_html=True)
 
 st.title("📈 AI Financial Forecast Dashboard")
 st.markdown("Predict stock trends and market risk using Deep Learning.")
 
-# --- 2. Load the AI Models (Only runs once) ---
+# --- 2. Load the AI Models (Bulletproof Method) ---
 @st.cache_resource
 def load_models():
-    # FIXED: Removed 'tf.' because load_model is already imported at the top
-    lstm_model = load_model('lstm_model.h5', compile=False)
+    # 1. Build the exact same architecture we used in Colab
+    model = Sequential()
+    model.add(LSTM(units=50, return_sequences=True, input_shape=(60, 1)))
+    model.add(Dropout(0.2))
+    model.add(LSTM(units=50, return_sequences=False))
+    model.add(Dropout(0.2))
+    model.add(Dense(units=25))
+    model.add(Dense(units=1))
+    
+    # 2. Load ONLY the weights (bypasses all Keras version errors!)
+    model.load_weights('lstm_model.weights.h5')
+    
+    # 3. Load the other files
     scaler = joblib.load('scaler.pkl')
     garch_model = joblib.load('garch_model.pkl')
-    return lstm_model, scaler, garch_model
+    
+    return model, scaler, garch_model
 
 lstm_model, scaler, garch_model = load_models()
 
@@ -64,7 +75,6 @@ forecast = garch_fit.forecast(horizon=30)
 forecasted_vol = (forecast.variance.values[-1, :] ** 0.5) * np.sqrt(252) # Annualized
 
 # --- 5. Main Dashboard Display ---
-# Top Metrics
 col1, col2, col3 = st.columns(3)
 with col1:
     st.metric(label=f"Current {ticker} Price", value=f"${current_price:.2f}")
@@ -76,7 +86,6 @@ with col3:
 
 st.markdown("---")
 
-# Tabs for different views
 tab1, tab2 = st.tabs(["📊 Price Prediction", "⚠️ Risk Analysis"])
 
 with tab1:
