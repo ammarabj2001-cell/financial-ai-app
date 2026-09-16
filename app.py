@@ -1,12 +1,10 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import yfinance as yf
 import joblib
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout, Input
 from arch import arch_model
-import time
 
 # --- 1. Page Setup & UI/UX ---
 st.set_page_config(page_title="AI Financial Dashboard", page_icon="📈", layout="wide")
@@ -20,7 +18,7 @@ st.markdown("""
 st.title("📈 AI Financial Forecast Dashboard")
 st.markdown("Predict stock trends and market risk using Deep Learning.")
 
-# --- 2. Load the AI Models (Bulletproof Method) ---
+# --- 2. Load the AI Models ---
 @st.cache_resource
 def load_models():
     model = Sequential()
@@ -46,42 +44,18 @@ st.sidebar.markdown("---")
 st.sidebar.info("This dashboard uses an LSTM Neural Network for price forecasting and a GARCH model for real-time risk analysis.")
 
 # --- 4. Fetch Data & Run Predictions ---
-def get_fallback_data(ticker):
-    """Generates realistic fallback data if Yahoo Finance blocks the request."""
-    dates = pd.date_range(end=pd.Timestamp.today(), periods=200, freq='B')
-    np.random.seed(42) # Reproducible "random" walk
-    base_prices = {'AAPL': 330, 'GOOGL': 175, 'MSFT': 420, 'AMZN': 185, 'TSLA': 250}
-    base_price = base_prices.get(ticker, 100)
-    
-    # Simulate realistic daily returns
-    returns = np.random.normal(0.0005, 0.015, 200)
-    prices = base_price * np.cumprod(1 + returns)
-    
-    df = pd.DataFrame({'Close': prices}, index=dates)
-    df['Daily_Return'] = df['Close'].pct_change()
-    df['Rolling_Volatility'] = df['Daily_Return'].rolling(window=20).std() * np.sqrt(252)
-    return df.dropna()
-
 @st.cache_data(ttl=3600)
 def get_data(ticker):
-    try:
-        stock = yf.Ticker(ticker)
-        df = stock.history(period="5y")
-        if not df.empty and 'Close' in df.columns:
-            return df
-    except Exception:
-        pass 
+    # Load the real historical data directly from GitHub
+    df = pd.read_csv(f'{ticker}_data.csv', index_col=0, parse_dates=True)
     
-    # FALLBACK: If Yahoo Finance is blocking, use realistic simulated data
-    return get_fallback_data(ticker)
+    # Calculate returns and volatility
+    df['Daily_Return'] = df['Close'].pct_change()
+    df['Rolling_Volatility'] = df['Daily_Return'].rolling(window=20).std() * np.sqrt(252)
+    
+    return df.dropna()
 
 df = get_data(ticker)
-
-# Check if we are using fallback data to show a polite banner
-is_fallback = len(df) == 200 and df.index[-1].strftime('%Y-%m-%d') == pd.Timestamp.today().strftime('%Y-%m-%d')
-if is_fallback:
-    st.info("ℹ️ *Live data is temporarily rate-limited by the provider. Showing realistic recent historical data for demonstration purposes.*")
-
 current_price = float(df['Close'].iloc[-1])
 
 # Run LSTM Prediction
@@ -97,7 +71,7 @@ garch_spec = arch_model(returns, vol='Garch', p=1, q=1)
 garch_fit = garch_spec.fit(disp='off')
 forecast = garch_fit.forecast(horizon=30)
 
-# THE FIX: Extract the FIRST element [0] from the 30-day forecast array before converting to float
+# Extract the first day's volatility forecast
 forecasted_vol_array = (forecast.variance.values[-1, :] ** 0.5) * np.sqrt(252)
 forecasted_vol = float(forecasted_vol_array[0])
 
