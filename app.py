@@ -4,7 +4,7 @@ import numpy as np
 import yfinance as yf
 import joblib
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout
+from tensorflow.keras.layers import LSTM, Dense, Dropout, Input
 from arch import arch_model
 import time
 
@@ -17,14 +17,16 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title(" AI Financial Forecast Dashboard")
+st.title("📈 AI Financial Forecast Dashboard")
 st.markdown("Predict stock trends and market risk using Deep Learning.")
 
 # --- 2. Load the AI Models (Bulletproof Method) ---
 @st.cache_resource
 def load_models():
+    # Use Input layer to avoid the Keras input_shape warning
     model = Sequential()
-    model.add(LSTM(units=50, return_sequences=True, input_shape=(60, 1)))
+    model.add(Input(shape=(60, 1)))
+    model.add(LSTM(units=50, return_sequences=True))
     model.add(Dropout(0.2))
     model.add(LSTM(units=50, return_sequences=False))
     model.add(Dropout(0.2))
@@ -47,10 +49,11 @@ st.sidebar.info("This dashboard uses an LSTM Neural Network for price forecastin
 # --- 4. Fetch Data & Run Predictions ---
 @st.cache_data(ttl=3600)
 def get_data(ticker):
-    # Retry mechanism to bypass temporary Yahoo Finance blocks
+    # Retry mechanism using the more robust yf.Ticker method
     for attempt in range(3):
         try:
-            df = yf.download(ticker, start="2021-01-01", progress=False)
+            stock = yf.Ticker(ticker)
+            df = stock.history(period="5y") # "5y" gets 5 years of data
             if not df.empty:
                 break
         except Exception:
@@ -62,12 +65,8 @@ def get_data(ticker):
     if df.empty:
         return None
         
-    # Flatten columns if yfinance returns a MultiIndex
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.droplevel(1)
-        
-    # Force data into a clean 1D format
-    close_prices = df['Close'].squeeze().astype(float)
+    # yf.Ticker.history already returns a clean DataFrame, just ensure it's float
+    close_prices = df['Close'].astype(float)
     
     df['Daily_Return'] = close_prices.pct_change()
     df['Rolling_Volatility'] = df['Daily_Return'].rolling(window=20).std() * np.sqrt(252)
@@ -76,26 +75,26 @@ def get_data(ticker):
 
 df = get_data(ticker)
 
-# Safety check if Yahoo Finance blocked the download
+# Safety check if Yahoo Finance is blocking requests
 if df is None or df.empty:
-    st.error(f"⚠️ Could not fetch data for {ticker}. Yahoo Finance is temporarily blocking requests. Please wait a minute and refresh the page.")
+    st.error(f"⚠️ Could not fetch data for {ticker}. Yahoo Finance is temporarily blocking requests from this server. Please wait a minute and refresh the page, or try a different stock.")
     st.stop()
 
-current_price = df['Close'].iloc[-1]
+current_price = float(df['Close'].iloc[-1])
 
 # Run LSTM Prediction
 last_60_days = df['Close'].values[-60:]
 last_60_scaled = scaler.transform(last_60_days.reshape(-1, 1))
 X_new = last_60_scaled.reshape(1, 60, 1)
 predicted_scaled = lstm_model.predict(X_new, verbose=0)
-predicted_price = scaler.inverse_transform(predicted_scaled)[0][0]
+predicted_price = float(scaler.inverse_transform(predicted_scaled)[0][0])
 
 # Run GARCH Volatility
 returns = df['Daily_Return'].dropna() * 100
 garch_spec = arch_model(returns, vol='Garch', p=1, q=1)
 garch_fit = garch_spec.fit(disp='off')
 forecast = garch_fit.forecast(horizon=30)
-forecasted_vol = (forecast.variance.values[-1, :] ** 0.5) * np.sqrt(252)
+forecasted_vol = float((forecast.variance.values[-1, :] ** 0.5) * np.sqrt(252))
 
 # --- 5. Main Dashboard Display ---
 col1, col2, col3 = st.columns(3)
@@ -105,7 +104,7 @@ with col2:
     change = predicted_price - current_price
     st.metric(label="AI Predicted Price (Tomorrow)", value=f"${predicted_price:.2f}", delta=f"{change:.2f}")
 with col3:
-    st.metric(label="Forecasted Risk (30 Days)", value=f"{forecasted_vol[0]*100:.1f}%")
+    st.metric(label="Forecasted Risk (30 Days)", value=f"{forecasted_vol*100:.1f}%")
 
 st.markdown("---")
 
@@ -130,13 +129,13 @@ with tab2:
     st.subheader("Market Volatility Forecast (Next 30 Days)")
     vol_chart = pd.DataFrame({
         "Historical Volatility": df['Rolling_Volatility'].tail(100) * 100,
-        "AI Forecasted Volatility": [None]*99 + list(forecasted_vol * 100)
+        "AI Forecasted Volatility": [None]*99 + [forecasted_vol * 100]
     })
     st.line_chart(vol_chart, use_container_width=True)
     
-    if forecasted_vol[0] > 0.25:
+    if forecasted_vol > 0.25:
         st.error("⚠️ **High Risk:** Market is expected to be highly volatile.")
-    elif forecasted_vol[0] > 0.15:
+    elif forecasted_vol > 0.15:
         st.warning("⚠️ **Medium Risk:** Moderate market fluctuations expected.")
     else:
         st.success("✅ **Low Risk:** Market is expected to be stable.")
