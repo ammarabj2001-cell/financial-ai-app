@@ -23,7 +23,7 @@ st.markdown("Predict stock trends and market risk using Deep Learning.")
 # --- 2. Load the AI Models (Only runs once) ---
 @st.cache_resource
 def load_models():
-    lstm_model = load_model('lstm_model.h5')
+    lstm_model = load_model('lstm_model.keras')
     scaler = joblib.load('scaler.pkl')
     garch_model = joblib.load('garch_model.pkl')
     return lstm_model, scaler, garch_model
