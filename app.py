@@ -5,6 +5,7 @@ import yfinance as yf
 import joblib
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
+from arch import arch_model
 import matplotlib.pyplot as plt
 
 # --- 1. Page Setup & UI/UX ---
@@ -34,19 +35,18 @@ def load_models():
     # 2. Load ONLY the weights (bypasses all Keras version errors!)
     model.load_weights('lstm_model.weights.h5')
     
-    # 3. Load the other files
+    # 3. Load the scaler
     scaler = joblib.load('scaler.pkl')
-    garch_model = joblib.load('garch_model.pkl')
     
-    return model, scaler, garch_model
+    return model, scaler
 
-lstm_model, scaler, garch_model = load_models()
+lstm_model, scaler = load_models()
 
 # --- 3. Sidebar for User Input ---
 st.sidebar.header("⚙️ User Settings")
 ticker = st.sidebar.selectbox("Select a Stock", ["AAPL", "GOOGL", "MSFT", "AMZN", "TSLA"])
 st.sidebar.markdown("---")
-st.sidebar.info("This dashboard uses an LSTM Neural Network for price forecasting and a GARCH model for risk analysis.")
+st.sidebar.info("This dashboard uses an LSTM Neural Network for price forecasting and a GARCH model for real-time risk analysis.")
 
 # --- 4. Fetch Data & Run Predictions ---
 @st.cache_data
@@ -68,9 +68,10 @@ X_new = last_60_scaled.reshape(1, 60, 1)
 predicted_scaled = lstm_model.predict(X_new, verbose=0)
 predicted_price = scaler.inverse_transform(predicted_scaled)[0][0]
 
-# Run GARCH Volatility
+# Run GARCH Volatility (Fit on the fly to avoid pickle errors and get latest data!)
 returns = df['Daily_Return'].dropna() * 100
-garch_fit = garch_model.fit(disp='off')
+garch_spec = arch_model(returns, vol='Garch', p=1, q=1)
+garch_fit = garch_spec.fit(disp='off')
 forecast = garch_fit.forecast(horizon=30)
 forecasted_vol = (forecast.variance.values[-1, :] ** 0.5) * np.sqrt(252) # Annualized
 
