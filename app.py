@@ -6,6 +6,7 @@ import joblib
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 from arch import arch_model
+import time
 
 # --- 1. Page Setup & UI/UX ---
 st.set_page_config(page_title="AI Financial Dashboard", page_icon="📈", layout="wide")
@@ -16,7 +17,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("📈 AI Financial Forecast Dashboard")
+st.title(" AI Financial Forecast Dashboard")
 st.markdown("Predict stock trends and market risk using Deep Learning.")
 
 # --- 2. Load the AI Models (Bulletproof Method) ---
@@ -46,8 +47,18 @@ st.sidebar.info("This dashboard uses an LSTM Neural Network for price forecastin
 # --- 4. Fetch Data & Run Predictions ---
 @st.cache_data(ttl=3600)
 def get_data(ticker):
-    df = yf.download(ticker, start="2021-01-01", progress=False)
-    
+    # Retry mechanism to bypass temporary Yahoo Finance blocks
+    for attempt in range(3):
+        try:
+            df = yf.download(ticker, start="2021-01-01", progress=False)
+            if not df.empty:
+                break
+        except Exception:
+            if attempt < 2:
+                time.sleep(2) # Wait 2 seconds before retrying
+            else:
+                return None
+
     if df.empty:
         return None
         
@@ -55,7 +66,7 @@ def get_data(ticker):
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.droplevel(1)
         
-    # THE MAGIC FIX: .squeeze() forces it to be a 1D list, astype(float) ensures it's numbers
+    # Force data into a clean 1D format
     close_prices = df['Close'].squeeze().astype(float)
     
     df['Daily_Return'] = close_prices.pct_change()
@@ -67,7 +78,7 @@ df = get_data(ticker)
 
 # Safety check if Yahoo Finance blocked the download
 if df is None or df.empty:
-    st.error(f"⚠️ Could not fetch data for {ticker}. Yahoo Finance might be temporarily rate-limiting requests. Please try again in a minute.")
+    st.error(f"⚠️ Could not fetch data for {ticker}. Yahoo Finance is temporarily blocking requests. Please wait a minute and refresh the page.")
     st.stop()
 
 current_price = df['Close'].iloc[-1]
@@ -111,7 +122,7 @@ with tab1:
     if predicted_price > current_price * 1.02:
         st.success("🟢 **BUY Signal:** AI predicts an upward trend.")
     elif predicted_price < current_price * 0.98:
-        st.error(" **SELL Signal:** AI predicts a downward trend.")
+        st.error("🔴 **SELL Signal:** AI predicts a downward trend.")
     else:
         st.warning("🟡 **HOLD Signal:** Price expected to remain stable.")
 
