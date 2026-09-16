@@ -66,12 +66,13 @@ predicted_scaled = lstm_model.predict(X_new, verbose=0)
 predicted_price = float(scaler.inverse_transform(predicted_scaled)[0][0])
 
 # Run GARCH Volatility
+# We multiply by 100 so the GARCH model outputs volatility in percentage terms (e.g., 22.5 for 22.5%)
 returns = df['Daily_Return'].dropna() * 100
 garch_spec = arch_model(returns, vol='Garch', p=1, q=1)
 garch_fit = garch_spec.fit(disp='off')
 forecast = garch_fit.forecast(horizon=30)
 
-# Extract the first day's volatility forecast
+# Extract the first day's volatility forecast (already in percentage terms)
 forecasted_vol_array = (forecast.variance.values[-1, :] ** 0.5) * np.sqrt(252)
 forecasted_vol = float(forecasted_vol_array[0])
 
@@ -83,7 +84,8 @@ with col2:
     change = predicted_price - current_price
     st.metric(label="AI Predicted Price (Tomorrow)", value=f"${predicted_price:.2f}", delta=f"{change:.2f}")
 with col3:
-    st.metric(label="Forecasted Risk (30 Days)", value=f"{forecasted_vol*100:.1f}%")
+    # FIXED: Removed * 100 because forecasted_vol is already a percentage
+    st.metric(label="Forecasted Risk (30 Days)", value=f"{forecasted_vol:.1f}%")
 
 st.markdown("---")
 
@@ -107,14 +109,17 @@ with tab1:
 with tab2:
     st.subheader("Market Volatility Forecast (Next 30 Days)")
     vol_chart = pd.DataFrame({
+        # Historical is already multiplied by 100 in the dataframe, so it matches the percentage scale
         "Historical Volatility": df['Rolling_Volatility'].tail(100) * 100,
-        "AI Forecasted Volatility": [None]*99 + [forecasted_vol * 100]
+        # FIXED: Removed * 100 so it matches the historical scale
+        "AI Forecasted Volatility": [None]*99 + [forecasted_vol]
     })
     st.line_chart(vol_chart, use_container_width=True)
     
-    if forecasted_vol > 0.25:
+    # FIXED: Updated thresholds to match percentage values (e.g., 25.0 instead of 0.25)
+    if forecasted_vol > 25.0:
         st.error("⚠️ **High Risk:** Market is expected to be highly volatile.")
-    elif forecasted_vol > 0.15:
+    elif forecasted_vol > 15.0:
         st.warning("⚠️ **Medium Risk:** Moderate market fluctuations expected.")
     else:
         st.success("✅ **Low Risk:** Market is expected to be stable.")
